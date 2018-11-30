@@ -24,11 +24,35 @@ J.U.C 下的 Atomic 类，都是通过 CAS 来实现的。下面会以 AtomicInt
 
 一个n++的问题。
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image003.png)
+public class Case {
+
+    public volatile int n;
+
+    public synchronized void add() {
+        n++;
+    }
+}
 
 打开cmd通过javap -verbose Case看看add方法的字节码指令
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image005.jpg)
+ public synchronized void add();
+   descriptor: ()V
+   flags: ACC_PUBLIC, ACC_SYNCHRONIZED
+   Code:
+     stack=3, locals=1, args_size=1
+        0: aload_0
+        1: dup
+        2: getfield      #2                  // Field n:I
+        5: iconst_1
+        6: iadd
+        7: putfield      #2                  // Field n:I
+       10: return
+     LineNumberTable:
+       line 12: 0
+       line 13: 10
+     LocalVariableTable:
+       Start  Length  Slot  Name   Signature
+           0      11     0  this   Lcom/example/base/dao/Case;
 
 n++被拆分成了几个指令：
 
@@ -42,7 +66,12 @@ n++被拆分成了几个指令：
 
 在add方法加上synchronized修饰解决。
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image006.png)
+public class Case {
+
+    public volatile int n;   public synchronized void add() {
+        n++;
+  }
+}
 
 这个方案当然可行，但是性能上差了点，还有其它方案么？
 
@@ -76,7 +105,17 @@ public boolean compareAndSwapInt(int b) {
 
 下面以AtomicInteger的实现为例，分析一下CAS是如何实现的。
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image008.jpg)
+public class AtomicInteger extends Number implements java.io.Serializable {
+    private static final long serialVersionUID = 6214790243416807050L;    // setup to use Unsafe.compareAndSwapInt for updates
+  private static final Unsafe unsafe = Unsafe.getUnsafe();
+ private static final long valueOffset;   static {
+        try {
+            valueOffset = unsafe.objectFieldOffset
+                (AtomicInteger.class.getDeclaredField("value"));
+  } catch (Exception ex) { throw new Error(ex); }
+    }
+
+    private volatile int value;
 
 · Unsafe，是CAS的核心类，由于Java方法无法直接访问底层系统，需要通过本地（native）方法来访问，Unsafe相当于一个后门，基于该类可以直接操作特定内存的数据。
 
@@ -86,9 +125,14 @@ public boolean compareAndSwapInt(int b) {
 
 看看AtomicInteger如何实现并发下的累加操作：
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image010.jpg)
+public final int getAndAdd(int delta) {
+    return unsafe.getAndAddInt(this, valueOffset, delta); }
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image012.jpg)
+public final int getAndAddInt(Object var1, long var2, int var4) {
+    int var5;
+ do {
+        var5 = this.getIntVolatile(var1, var2);
+  } while(!this.compareAndSwapInt(var1, var2, var5, var5 + var4));   return var5; }
 
 假设线程A和线程B同时执行getAndAdd操作（分别跑在不同CPU上）：
 
@@ -100,7 +144,7 @@ public boolean compareAndSwapInt(int b) {
 
 整个过程中，利用CAS保证了对于value的修改的并发安全，继续深入看看Unsafe类中的compareAndSwapInt方法实现。
 
-![](file:///C:\Users\wubinyu\AppData\Local\Temp\msohtmlclip1\01\clip_image014.jpg)
+public final native boolean compareAndSwapInt(Object var1, long var2, int var4, int var5);
 
 Unsafe类中的compareAndSwapInt，是一个本地方法，该方法的实现位于unsafe.cpp中，
 
