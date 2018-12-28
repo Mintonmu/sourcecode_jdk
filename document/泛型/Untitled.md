@@ -7,6 +7,7 @@ public class NumberPair<U extends Number,V extends Number> extends Pair<U,V>{
        super(first,second);
   }
 }
+
 限定类型后，如果类型使用错误，编译器会提示，指定边界后，类型擦除时就不会转换为Object了，而是会转换为它的边界类型。
 
 2、上界为某个接口
